@@ -1,0 +1,23 @@
+includes:
+  - model/sana_sprint_1step.yaml
+  - prior/masked_skew.yaml
+  - conditioner/resnet.yaml
+  - objective/clip_logdet.yaml
+  - training/default.yaml
+  - evaluation/default.yaml
+  - runtime/remote_cuda.yaml
+
+experiment:
+  name: sana_prompt_specific_k4
+  method: skew_trained
+  prompt_id: golden_retriever
+  prompt: A photograph of a golden retriever.
+  training_seed: 17
+  num_samples: 4
+  checkpoint_times: [0.0, 1.0, 2.0, 3.0]
+
+paths:
+  output_root: outputs
+  cache_root: cache/huggingface
+  artifact_root: artifacts
+

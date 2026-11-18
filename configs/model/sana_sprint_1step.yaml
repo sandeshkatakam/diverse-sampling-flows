@@ -1,0 +1,22 @@
+model:
+  model_id: Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers
+  revision: aa76e7f4f4928f378716b6716a2130fba3caf5b1
+  transformer_revision: aa76e7f4f4928f378716b6716a2130fba3caf5b1
+  vae_revision: aa76e7f4f4928f378716b6716a2130fba3caf5b1
+  height: 1024
+  width: 1024
+  num_inference_steps: 1
+  max_timesteps: 1.57080
+  intermediate_timesteps: null
+  schedule: [1.57080, 0.0]
+  guidance_scale: 4.5
+  max_sequence_length: 300
+  standardized_latent_shape: [32, 32, 32]
+  transformer_dtype: bfloat16
+  sampler_arithmetic_dtype: float32
+  decoder_dtype: bfloat16
+  sigma_data: 0.5
+  vae_scaling_factor: 0.41407
+  attention_backend: torch_sdpa
+  deterministic: true
+

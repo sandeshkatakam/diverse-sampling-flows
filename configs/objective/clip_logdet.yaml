@@ -1,0 +1,13 @@
+objective:
+  clip_model_id: openai/clip-vit-large-patch14
+  clip_revision: 32bd64288804d66eefd0ccbe215aa642df71cc41
+  dino_model_id: facebook/dinov2-base
+  dino_revision: f9e44c814b77203eaa57a6bdbbd535f21ede1415
+  siglip_model_id: google/siglip-base-patch16-224
+  siglip_revision: 7fd15f0689c79d79e38b1c2e2e2370a7bf2761ed
+  epsilon: 1.0e-4
+  minimum_bandwidth_sq: 1.0e-4
+  bandwidth_file: artifacts/bandwidths/{prompt_id}.json
+  feature_dtype: float32
+  kernel_dtype: float64
+

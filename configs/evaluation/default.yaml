@@ -1,0 +1,14 @@
+evaluation:
+  calibration_images: 512
+  validation_sets: 64
+  refinement_validation_sets: 256
+  test_sets: 256
+  iid_reference_images: 2048
+  prior_diagnostic_rows: 8192
+  refinement_steps_per_interval: [8, 16, 32]
+  raw_slot_metrics: true
+  refinement_latent_tolerance: 1.0e-3
+  refinement_clip_tolerance: 0.02
+  projection_dimensions: 64
+  bootstrap_replicates: 2000
+

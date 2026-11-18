@@ -1,0 +1,17 @@
+.worktrees/
+.superpowers/
+.venv/
+.uv-cache/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.py[cod]
+outputs/
+cache/
+wandb/
+runs/
+dist/
+build/
+*.egg-info/
+.coverage
+

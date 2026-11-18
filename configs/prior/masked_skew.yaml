@@ -1,0 +1,13 @@
+prior:
+  mask_groups: 2
+  ridges_per_pair: 1
+  solver: rk4
+  steps_per_interval: 8
+  dtype: float32
+  c_max: 0.7853981633974483
+  a_max: 0.25
+  b_max: 1.0
+  e_max: 2.0
+  mask_seed: 3101
+  permutation_seed: 3102
+

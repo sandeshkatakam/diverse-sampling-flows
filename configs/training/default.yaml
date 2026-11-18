@@ -1,0 +1,18 @@
+training:
+  updates: 1000
+  pilot_updates: 300
+  effective_sets_per_update: 4
+  microbatch_sets: 1
+  gradient_mode: feature_replay
+  lr: 1.0e-4
+  min_lr: 1.0e-5
+  betas: [0.9, 0.99]
+  optimizer_epsilon: 1.0e-8
+  weight_decay: 1.0e-4
+  warmup_updates: 50
+  ema_decay: 0.995
+  gradient_clip_norm: 1.0
+  validate_every: 100
+  training_initializations: [17, 18, 19]
+  max_consecutive_nonfinite: 2
+
