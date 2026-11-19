@@ -48,6 +48,27 @@ def test_math_validation_dry_run_uses_shared_venv_without_cuda() -> None:
     assert "CUDA_VISIBLE_DEVICES=" not in result.stdout
 
 
+def test_setup_dry_run_uses_uv_to_avoid_ensurepip_bootstrap() -> None:
+    result = _run("setup", "--dry-run")
+    assert result.returncode == 0
+    assert "uv venv --python python3.11" in result.stdout
+    assert "python3.11 -m venv" not in result.stdout
+
+
+def test_pipeline_dry_run_resolves_the_pilot_checkpoint() -> None:
+    result = subprocess.run(
+        ["bash", str(ROOT / "launch.sh"), "--dry-run"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0
+    assert "--run-id pilot-s17" in result.stdout
+    assert f"--checkpoint {ROOT}/outputs/train/pilot-s17/best.pt" in result.stdout
+    assert "<run>" not in result.stdout
+
+
 def test_model_launch_requires_gpu_and_rejects_visibility_widening() -> None:
     missing = _run("validate", "--stage", "model", "--dry-run")
     assert missing.returncode != 0
