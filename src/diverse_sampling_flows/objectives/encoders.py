@@ -88,6 +88,27 @@ class SigLIPPromptEncoder(FrozenImageEncoder):
         self.image_size, self.mean, self.std = image_size, list(mean), list(std)
         self.freeze()
 
+    @classmethod
+    def from_pretrained(
+        cls, model_id: str, revision: str, *, prompt: str, **kwargs: Any
+    ):
+        from transformers import AutoProcessor, SiglipModel
+
+        model = SiglipModel.from_pretrained(model_id, revision=revision, **kwargs)
+        processor = AutoProcessor.from_pretrained(model_id, revision=revision, **kwargs)
+        text_inputs = processor(
+            text=[prompt], padding="max_length", return_tensors="pt"
+        )
+        size_value = processor.image_processor.size
+        size = int(size_value.get("height", size_value.get("shortest_edge")))
+        return cls(
+            model,
+            dict(text_inputs),
+            size,
+            processor.image_processor.image_mean,
+            processor.image_processor.image_std,
+        )
+
     def forward(self, images: torch.Tensor) -> torch.Tensor:
         pixels = preprocess_images(
             images, size=self.image_size, mean=self.mean, std=self.std
