@@ -1,0 +1,2 @@
+"""Gaussian-marginal baseline couplings."""
+
