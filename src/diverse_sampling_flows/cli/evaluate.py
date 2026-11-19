@@ -23,6 +23,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--checkpoint", type=Path)
     parser.add_argument("--device", required=True)
     parser.add_argument("--sets", type=int)
+    parser.add_argument("--refinement", action="store_true")
+    parser.add_argument("--refinement-sets", type=int)
     parser.add_argument("--output-root", type=Path, default=Path("outputs"))
     parser.add_argument("--run-id")
     parser.add_argument("--toy", action="store_true")
@@ -65,6 +67,8 @@ def main(argv: list[str] | None = None) -> int:
             device=args.device,
             sets=sets,
             output_directory=run,
+            run_refinement=args.refinement,
+            refinement_sets=args.refinement_sets,
         )
     write_raw_records(
         run / "raw.jsonl", rows, num_slots=int(config.experiment.num_samples)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import time
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,7 @@ from diverse_sampling_flows.objectives.encoders import (
     DINOImageEncoder,
     SigLIPPromptEncoder,
 )
+from diverse_sampling_flows.solvers.rk4 import integrate_rk4
 from diverse_sampling_flows.utils.seeding import SeedStreams
 
 
@@ -36,6 +38,15 @@ def _jsonable(value: Any) -> Any:
     if isinstance(value, list | tuple):
         return [_jsonable(item) for item in value]
     return value
+
+
+def finalize_marginals_or_unavailable(
+    accumulator: PriorMarginalAccumulator,
+) -> dict[str, Any]:
+    try:
+        return {"status": "complete", "diagnostics": accumulator.finalize()}
+    except ValueError as error:
+        return {"status": "unavailable", "reason": str(error)}
 
 
 def _load_bandwidth(config: DictConfig) -> float:
@@ -59,7 +70,14 @@ def evaluate_real_method(
     device: str,
     sets: int,
     output_directory: Path,
+    run_refinement: bool = False,
+    refinement_sets: int | None = None,
 ) -> list[dict[str, Any]]:
+    streams = SeedStreams(int(config.experiment.training_seed))
+    initialization_seed = streams.seed_for("parameter_initialization")
+    torch.manual_seed(initialization_seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(initialization_seed)
     model = None
     if method not in {"iid", "fixed_rotation", "balanced_gaussian"}:
         model = build_trainable_method(config, method, device)
@@ -93,7 +111,6 @@ def evaluate_real_method(
         **common,
     ).to(device)
     bandwidth_sq = _load_bandwidth(config)
-    streams = SeedStreams(int(config.experiment.training_seed))
     slots = int(config.experiment.num_samples)
     dimension = math.prod(config.model.standardized_latent_shape)
     marginals = PriorMarginalAccumulator(
@@ -161,7 +178,7 @@ def evaluate_real_method(
                 )
     write_json(
         output_directory / "prior_marginals.json",
-        _jsonable(marginals.finalize()),
+        _jsonable(finalize_marginals_or_unavailable(marginals)),
     )
     write_json(
         output_directory / "evaluation_provenance.json",
@@ -172,4 +189,129 @@ def evaluate_real_method(
             "checkpoint": str(checkpoint) if checkpoint else None,
         },
     )
+    if run_refinement:
+        if model is None or method not in {"skew_initial", "skew_trained"}:
+            raise ValueError("solver refinement requires a skew field method")
+        _evaluate_refinement(
+            config,
+            model,
+            generator,
+            clip,
+            bandwidth_sq,
+            device=device,
+            sets=int(refinement_sets or config.evaluation.refinement_validation_sets),
+            output_directory=output_directory,
+        )
     return rows
+
+
+@torch.no_grad()
+def _evaluate_refinement(
+    config: DictConfig,
+    model: torch.nn.Module,
+    generator: SanaSprintAdapter,
+    clip: CLIPImageEncoder,
+    bandwidth_sq: float,
+    *,
+    device: str,
+    sets: int,
+    output_directory: Path,
+) -> None:
+    started = time.perf_counter()
+    steps = [int(value) for value in config.evaluation.refinement_steps_per_interval]
+    streams = SeedStreams(int(config.experiment.training_seed))
+    slots = int(config.experiment.num_samples)
+    dimension = math.prod(config.model.standardized_latent_shape)
+    latent_sums = [0.0 for _ in range(len(steps) - 1)]
+    score_sums = [0.0 for _ in range(len(steps) - 1)]
+    score_totals = [0.0 for _ in steps]
+    accumulators = [
+        PriorMarginalAccumulator(
+            slots=slots,
+            dimension=dimension,
+            projection_dimensions=int(config.evaluation.projection_dimensions),
+            seed=int(config.experiment.training_seed) + 6201,
+        )
+        for _ in steps
+    ]
+    for _ in range(sets):
+        seed = streams.standard_normal(
+            "refinement_validation",
+            (1, *config.model.standardized_latent_shape),
+            device=device,
+        )
+        solutions = [
+            integrate_rk4(
+                model,
+                seed,
+                list(config.experiment.checkpoint_times),
+                resolution,
+            )
+            for resolution in steps
+        ]
+        scores = []
+        for index, solution in enumerate(solutions):
+            accumulators[index].update(solution.cpu())
+            images = generator.generate(
+                solution.flatten(0, 1),
+                prompt=str(config.experiment.prompt),
+                differentiable=False,
+            )
+            features = clip(images).reshape(1, slots, -1)
+            score = float(
+                rbf_logdet_score(
+                    features,
+                    bandwidth_sq=bandwidth_sq,
+                    epsilon=float(config.objective.epsilon),
+                )[0]
+            )
+            scores.append(score)
+            score_totals[index] += score
+        for index in range(len(steps) - 1):
+            difference = (solutions[index] - solutions[index + 1]).flatten(2)
+            latent_sums[index] += float(
+                (difference.norm(dim=-1) / math.sqrt(dimension)).mean()
+            )
+            score_sums[index] += abs(scores[index] - scores[index + 1])
+    comparisons = [
+        {
+            "coarse_steps": steps[index],
+            "fine_steps": steps[index + 1],
+            "mean_normalized_latent_difference": latent_sums[index] / sets,
+            "mean_clip_logdet_difference": score_sums[index] / sets,
+        }
+        for index in range(len(steps) - 1)
+    ]
+    finest = comparisons[-1]
+    converged = (
+        finest["mean_normalized_latent_difference"]
+        < float(config.evaluation.refinement_latent_tolerance)
+        and finest["mean_clip_logdet_difference"]
+        < float(config.evaluation.refinement_clip_tolerance)
+    )
+    write_json(
+        output_directory / "refinement.json",
+        _jsonable(
+            {
+                "status": "complete",
+                "sets": sets,
+                "steps_per_interval": steps,
+                "comparisons": comparisons,
+                "mean_clip_logdet": [value / sets for value in score_totals],
+                "converged": converged,
+                "latent_tolerance": float(
+                    config.evaluation.refinement_latent_tolerance
+                ),
+                "clip_tolerance": float(config.evaluation.refinement_clip_tolerance),
+                "marginals": [
+                    finalize_marginals_or_unavailable(accumulator)
+                    for accumulator in accumulators
+                ],
+                "field_calls": sum(4 * value * (slots - 1) for value in steps)
+                * sets,
+                "generator_calls": len(steps) * sets,
+                "generated_images": len(steps) * sets * slots,
+                "wall_seconds": time.perf_counter() - started,
+            }
+        ),
+    )

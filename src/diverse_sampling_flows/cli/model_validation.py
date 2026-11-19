@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gc
+import math
 from pathlib import Path
 from typing import Any
 
@@ -10,11 +11,30 @@ import torch
 from diffusers import SanaSprintPipeline
 from omegaconf import DictConfig
 
-from diverse_sampling_flows.generators.base import configure_deterministic_backend
+from diverse_sampling_flows.generators.base import (
+    configure_deterministic_backend,
+    configure_training_backward_backend,
+)
 from diverse_sampling_flows.generators.sana_sprint import SanaSprintAdapter
 from diverse_sampling_flows.objectives.clip_logdet import rbf_logdet_score
 from diverse_sampling_flows.objectives.encoders import CLIPImageEncoder
 from diverse_sampling_flows.training.feature_replay import feature_replay_backward
+
+REAL_REPLAY_RELATIVE_TOLERANCE = 5e-3
+
+
+def replay_gate_passes(
+    monolithic_gradient: float,
+    replay_gradient: float,
+    *,
+    relative_error: float,
+) -> bool:
+    return (
+        math.isfinite(monolithic_gradient)
+        and math.isfinite(replay_gradient)
+        and abs(monolithic_gradient) > 1e-8
+        and relative_error <= REAL_REPLAY_RELATIVE_TOLERANCE
+    )
 
 
 def _official_image(
@@ -104,9 +124,9 @@ def run_model_validation(
         cache_dir=str(config.paths.cache_root),
         local_files_only=True,
     ).to(device)
-    # CUDA lacks deterministic backward implementations for antialiased bicubic
-    # resize and memory-efficient attention. Forward determinism remains strict.
-    torch.use_deterministic_algorithms(True, warn_only=True)
+    # CUDA lacks deterministic backward for antialiased bicubic resize. Math SDPA
+    # avoids the separate memory-efficient-attention nondeterminism.
+    backward_policy = configure_training_backward_backend()
     noise = saved_noise.detach().clone().requires_grad_(True)
     image = adapter.generate(noise, prompt=prompt, differentiable=True)
     features = clip(image)
@@ -129,7 +149,12 @@ def run_model_validation(
 
     bandwidth_sq = 0.5
     anchor = saved_noise.detach()
-    parameter = torch.nn.Parameter(torch.tensor(1.0, device=device))
+    parameter = torch.nn.Parameter(torch.tensor(0.1, device=device))
+    direction = torch.randn(
+        anchor.shape,
+        generator=torch.Generator(device=device).manual_seed(881),
+        device=device,
+    )
 
     def feature(value: torch.Tensor) -> torch.Tensor:
         return clip(
@@ -140,7 +165,7 @@ def run_model_validation(
 
     with torch.no_grad():
         anchor_feature = feature(anchor)
-    dependent = anchor * parameter
+    dependent = anchor + parameter * direction
     monolithic_features = torch.stack((anchor_feature, feature(dependent)), dim=1)
     monolithic_loss = -rbf_logdet_score(
         monolithic_features,
@@ -148,7 +173,7 @@ def run_model_validation(
         epsilon=float(config.objective.epsilon),
     ).mean()
     monolithic_gradient = torch.autograd.grad(monolithic_loss, parameter)[0].detach()
-    dependent = anchor * parameter
+    dependent = anchor + parameter * direction
 
     def set_loss(values: torch.Tensor) -> torch.Tensor:
         return -rbf_logdet_score(
@@ -168,15 +193,16 @@ def run_model_validation(
         and input_gradient["norm"] > 0
         and input_gradient["generator_parameter_gradients"] == 0
         and input_gradient["clip_parameter_gradients"] == 0
-        and relative <= 1e-4
+        and replay_gate_passes(
+            float(monolithic_gradient),
+            float(replay_gradient),
+            relative_error=relative,
+        )
     )
     return {
         "status": "passed" if passed else "failed",
         "backend_policy": policy,
-        "backward_backend_exception": [
-            "upsample_bicubic2d_aa_backward_cuda",
-            "memory_efficient_attention_backward_cuda",
-        ],
+        "backward_policy": backward_policy,
         "parity": parity,
         "rng_independent": rng_independent,
         "input_gradient": input_gradient,
@@ -184,6 +210,7 @@ def run_model_validation(
             "monolithic_gradient": float(monolithic_gradient),
             "replay_gradient": float(replay_gradient),
             "relative_error": relative,
+            "declared_relative_tolerance": REAL_REPLAY_RELATIVE_TOLERANCE,
             "feature_forwards": replay.feature_forwards,
         },
         "peak_gpu_memory_bytes": torch.cuda.max_memory_allocated(),

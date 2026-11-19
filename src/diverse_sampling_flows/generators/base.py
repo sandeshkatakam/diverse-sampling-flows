@@ -33,6 +33,20 @@ def configure_deterministic_backend() -> dict[str, Any]:
     }
 
 
+def configure_training_backward_backend() -> dict[str, Any]:
+    """Use deterministic math attention; allow only unsupported resize backward."""
+    configure_deterministic_backend()
+    torch.backends.cuda.enable_flash_sdp(False)
+    torch.backends.cuda.enable_mem_efficient_sdp(False)
+    torch.backends.cuda.enable_math_sdp(True)
+    torch.use_deterministic_algorithms(True, warn_only=True)
+    return {
+        "attention_backward_backend": "math_sdp",
+        "deterministic_warn_only": True,
+        "known_exception": "upsample_bicubic2d_aa_backward_cuda",
+    }
+
+
 class FrozenGeneratorAdapter(nn.Module, ABC):
     """Map standardized Gaussian tensors to float RGB tensors."""
 

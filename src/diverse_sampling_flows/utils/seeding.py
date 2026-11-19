@@ -36,6 +36,11 @@ class SeedStreams:
             self._generators[key] = generator
         return self._generators[key]
 
+    def seed_for(self, namespace: str) -> int:
+        """Return and record a deterministic namespace seed without drawing rows."""
+        self.counters.setdefault(namespace, 0)
+        return _namespace_seed(self.base_seed, namespace)
+
     def standard_normal(
         self,
         namespace: str,

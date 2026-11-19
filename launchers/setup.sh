@@ -16,8 +16,8 @@ esac
 
 commands=(
   "python3.11 -m venv $ROOT/.venv"
-  "$ROOT/.venv/bin/python -m pip install --constraint $ROOT/requirements/constraints.txt -e $ROOT[dev]"
-  "$ROOT/.venv/bin/python -m pip check"
+  "uv pip install --python $ROOT/.venv/bin/python --constraint $ROOT/requirements/constraints.txt -e $ROOT[dev]"
+  "uv pip check --python $ROOT/.venv/bin/python"
 )
 if [[ "$dry_run" == "true" ]]; then
   printf '%s\n' "${commands[@]}"
@@ -26,6 +26,12 @@ fi
 if [[ ! -x "$ROOT/.venv/bin/python" ]]; then
   python3.11 -m venv "$ROOT/.venv"
 fi
-"$ROOT/.venv/bin/python" -m pip install --constraint "$ROOT/requirements/constraints.txt" -e "$ROOT[dev]"
-"$ROOT/.venv/bin/python" -m pip check
+if command -v uv >/dev/null 2>&1; then
+  export UV_CACHE_DIR="$ROOT/.uv-cache"
+  uv pip install --python "$ROOT/.venv/bin/python" --constraint "$ROOT/requirements/constraints.txt" -e "$ROOT[dev]"
+  uv pip check --python "$ROOT/.venv/bin/python"
+else
+  "$ROOT/.venv/bin/python" -m pip install --constraint "$ROOT/requirements/constraints.txt" -e "$ROOT[dev]"
+  "$ROOT/.venv/bin/python" -m pip check
+fi
 "$ROOT/.venv/bin/python" -c 'import torch,diffusers,transformers,omegaconf; print(torch.__version__, torch.version.cuda)'

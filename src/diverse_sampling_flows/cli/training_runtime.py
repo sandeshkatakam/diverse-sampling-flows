@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import time
 from pathlib import Path
 
 import torch
@@ -14,6 +15,7 @@ from diverse_sampling_flows.cli.experiment_runtime import (
     build_trainable_method,
     sample_method_latents,
 )
+from diverse_sampling_flows.generators.base import configure_training_backward_backend
 from diverse_sampling_flows.generators.sana_sprint import SanaSprintAdapter
 from diverse_sampling_flows.objectives.clip_logdet import (
     calibrate_bandwidth,
@@ -146,6 +148,11 @@ def train_real_method(
     updates: int,
     resume: Path | None,
 ) -> None:
+    streams = SeedStreams(int(config.experiment.training_seed))
+    initialization_seed = streams.seed_for("parameter_initialization")
+    torch.manual_seed(initialization_seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(initialization_seed)
     model = build_trainable_method(config, method, device)
     optimizer = build_adamw(
         model,
@@ -165,7 +172,7 @@ def train_real_method(
         optimizer=optimizer,
         scheduler=scheduler,
         ema=ExponentialMovingAverage(model, float(config.training.ema_decay)),
-        seed_streams=SeedStreams(int(config.experiment.training_seed)),
+        seed_streams=streams,
         output_directory=output_directory,
         gradient_clip_norm=float(config.training.gradient_clip_norm),
         max_consecutive_nonfinite=int(config.training.max_consecutive_nonfinite),
@@ -175,6 +182,7 @@ def train_real_method(
     else:
         trainer.save("initial.pt")
     generator, encoder = _load_stack(config, device)
+    configure_training_backward_backend()
     bandwidth_sq = _load_or_calibrate_bandwidth(
         config, generator, encoder, device=device
     )
@@ -187,10 +195,15 @@ def train_real_method(
         4
         * int(config.prior.steps_per_interval)
         * (len(config.experiment.checkpoint_times) - 1)
+        if method == "skew_trained"
+        else 1
     )
     nonfinite = 0
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats()
     with JsonlLogger(output_directory / "training.jsonl") as logger:
         while trainer.global_update < updates:
+            update_started = time.perf_counter()
             optimizer.zero_grad(set_to_none=True)
             losses = []
             for _ in range(effective_sets // microbatch):
@@ -257,12 +270,14 @@ def train_real_method(
                 peak_gpu_memory=torch.cuda.max_memory_allocated()
                 if torch.cuda.is_available()
                 else 0,
+                wall_seconds=time.perf_counter() - update_started,
             )
             should_validate = (
                 trainer.global_update % int(config.training.validate_every) == 0
                 or trainer.global_update == updates
             )
             if should_validate:
+                validation_started = time.perf_counter()
                 with trainer.ema.average_parameters(model):
                     score = _validation_score(
                         config,
@@ -281,6 +296,7 @@ def train_real_method(
                     update=trainer.global_update,
                     score=score,
                     eligible=math.isfinite(score),
+                    wall_seconds=time.perf_counter() - validation_started,
                 )
                 if improved:
                     trainer.save("best.pt")

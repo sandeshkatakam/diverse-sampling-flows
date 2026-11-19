@@ -8,6 +8,8 @@ __pycache__/
 *.py[cod]
 outputs/
 cache/
+artifacts/
+logs/
 wandb/
 runs/
 dist/

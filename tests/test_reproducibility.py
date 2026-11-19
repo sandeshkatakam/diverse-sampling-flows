@@ -29,6 +29,21 @@ def test_seed_namespaces_are_deterministic_and_disjoint() -> None:
     assert first.counters == {"training": 1, "calibration": 1}
 
 
+def test_parameter_initialization_seed_is_recorded_without_consuming_rows() -> None:
+    first = SeedStreams(17)
+    second = SeedStreams(17)
+
+    initialization = first.seed_for("parameter_initialization")
+
+    assert initialization == second.seed_for("parameter_initialization")
+    assert initialization != first.seed_for("training")
+    assert first.counters["parameter_initialization"] == 0
+    assert (
+        first.manifest()["namespace_seeds"]["parameter_initialization"]
+        == initialization
+    )
+
+
 def test_seed_stream_state_round_trip_continues_exact_sequence() -> None:
     uninterrupted = SeedStreams(91)
     _ = uninterrupted.standard_normal("training", (3,))

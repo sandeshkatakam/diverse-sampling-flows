@@ -79,7 +79,14 @@ run_logged() {
     printf 'CUDA_VISIBLE_DEVICES=%s\n' "${CUDA_VISIBLE_DEVICES:-}"
     printf 'CUBLAS_WORKSPACE_CONFIG=%s\n' "${CUBLAS_WORKSPACE_CONFIG:-}"
     printf 'HF_HUB_CACHE=%s\n' "${HF_HUB_CACHE:-}"
+    printf 'hostname=%s\n' "$(hostname)"
+    printf 'kernel=%s\n' "$(uname -srvmo)"
+    printf 'git_commit=%s\n' "$(git -C "$PROJECT_ROOT" rev-parse HEAD)"
+    printf 'git_branch=%s\n' "$(git -C "$PROJECT_ROOT" branch --show-current)"
   } >"$log_directory/environment.txt"
+  git -C "$PROJECT_ROOT" status --short >"$log_directory/git_status.txt"
+  git -C "$PROJECT_ROOT" diff --binary HEAD >"$log_directory/dirty.diff"
+  sha256sum "$log_directory/dirty.diff" >"$log_directory/dirty.diff.sha256"
   if [[ -n "${CUDA_VISIBLE_DEVICES:-}" && "$CUDA_VISIBLE_DEVICES" =~ ^[0-7]$ ]]; then
     gpu_record "$CUDA_VISIBLE_DEVICES" >"$log_directory/gpu.csv"
   fi
