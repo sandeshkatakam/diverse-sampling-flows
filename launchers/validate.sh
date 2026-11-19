@@ -21,7 +21,6 @@ while (($#)); do
   esac
 done
 [[ "$stage" == "math" || "$stage" == "model" ]] || die "--stage must be math or model"
-require_venv
 run_id="${run_id:-$(default_run_id "validate-$stage")}" 
 if [[ "$stage" == "math" ]]; then
   [[ "${device:-cpu}" == "cpu" ]] || die "math validation device must be cpu"
@@ -36,4 +35,5 @@ if [[ "$dry_run" == "true" ]]; then
   print_command "${command[@]}"
   exit 0
 fi
+require_venv
 run_logged "$PROJECT_ROOT/logs/validation/$run_id" false "${command[@]}"

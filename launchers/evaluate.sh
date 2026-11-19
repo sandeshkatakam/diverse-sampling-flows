@@ -19,11 +19,12 @@ while (($#)); do
   esac
 done
 [[ -n "$gpu" && -n "$method" ]] || die "evaluation requires --gpu and --method"
-require_venv; select_gpu "$gpu"; run_id="${run_id:-$(default_run_id evaluate)}"
+select_gpu "$gpu"; run_id="${run_id:-$(default_run_id evaluate)}"
 command=("$VENV_PYTHON" -m diverse_sampling_flows.cli.evaluate --config "$PROJECT_ROOT/configs/main.yaml" --method "$method" --device cuda:0 --output-root "$output_root" --run-id "$run_id")
 [[ -n "$checkpoint" ]] && command+=(--checkpoint "$checkpoint")
 [[ -n "$sets" ]] && command+=(--sets "$sets")
 [[ "$refinement" == "true" ]] && command+=(--refinement)
 [[ -n "$refinement_sets" ]] && command+=(--refinement-sets "$refinement_sets")
 if [[ "$dry_run" == "true" ]]; then print_environment "$gpu"; print_command "${command[@]}"; exit 0; fi
+require_venv
 run_logged "$PROJECT_ROOT/logs/evaluate/$run_id" false "${command[@]}"

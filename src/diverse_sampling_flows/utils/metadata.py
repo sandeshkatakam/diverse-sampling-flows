@@ -79,6 +79,15 @@ def _package_versions() -> dict[str, str]:
     return versions
 
 
+def _redact_environment_values(text: str, environment: Mapping[str, str]) -> str:
+    redacted = text
+    for key, value in environment.items():
+        redacted_value = redact_secrets({key: value})[key]
+        if value and redacted_value == "[REDACTED]":
+            redacted = redacted.replace(value, "[REDACTED]")
+    return redacted
+
+
 def capture_runtime_metadata(
     *,
     resolved_config: Mapping[str, Any],
@@ -92,7 +101,9 @@ def capture_runtime_metadata(
     environment = dict(os.environ if environ is None else environ)
     prompt = str(resolved_config.get("experiment", {}).get("prompt", ""))
     root = Path(code_root).resolve()
-    dirty_diff = _git_output(root, "diff", "--binary", "HEAD")
+    dirty_diff = _redact_environment_values(
+        _git_output(root, "diff", "--binary", "HEAD"), environment
+    )
     metadata = {
         "captured_at_utc": datetime.now(UTC).isoformat(),
         "hostname": socket.gethostname(),

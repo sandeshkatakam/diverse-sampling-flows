@@ -20,10 +20,11 @@ while (($#)); do
   esac
 done
 [[ -n "$gpu" ]] || die "training requires --gpu"
-require_venv; select_gpu "$gpu"; run_id="${run_id:-$(default_run_id train)}"
+select_gpu "$gpu"; run_id="${run_id:-$(default_run_id train)}"
 command=("$VENV_PYTHON" -m diverse_sampling_flows.cli.train --config "$config" --method "$method" --device cuda:0 --output-root "$output_root" --run-id "$run_id")
 [[ -n "$resume" ]] && command+=(--resume "$resume")
 [[ -n "$updates" ]] && command+=(--updates "$updates")
 command+=("${overrides[@]}")
 if [[ "$dry_run" == "true" ]]; then print_environment "$gpu"; print_command "${command[@]}"; exit 0; fi
+require_venv
 run_logged "$PROJECT_ROOT/logs/train/$run_id" "$detach" "${command[@]}"

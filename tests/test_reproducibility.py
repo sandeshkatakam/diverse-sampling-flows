@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -112,5 +113,12 @@ def test_runtime_metadata_records_exact_launch_and_prompt() -> None:
     assert metadata["prompt_sha256"] == prompt_sha256(prompt)
     assert metadata["checkpoint_revisions"] == {"generator": "a" * 40}
     assert "must-not-appear" not in json.dumps(metadata)
-    assert metadata["git"]["branch"] == "scrape"
+    branch = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=Path.cwd(),
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert metadata["git"]["branch"] == branch
 
